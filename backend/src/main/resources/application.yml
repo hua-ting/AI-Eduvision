@@ -1,0 +1,167 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: learning-recommend-system
+  
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/learning_recommend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  
+  # Redis配置
+  redis:
+    host: localhost
+    port: 6379
+    password: 
+    database: 0
+    timeout: 5000
+    lettuce:
+      pool:
+        max-active: 20
+        max-idle: 10
+        min-idle: 5
+        max-wait: -1
+  
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+  
+  # Jackson配置
+  jackson:
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+    default-property-inclusion: non_null
+  
+  # MVC配置
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+# MyBatis Plus配置
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+# JWT配置
+jwt:
+  secret: learning-recommend-system-secret-key-2024
+  expiration: 604800000  # 7天(毫秒)
+  header: Authorization
+  prefix: Bearer 
+
+# AI模型服务配置
+ai:
+  # Python AI 服务配置（Transformer 模型）
+  python:
+    enabled: true
+    service-url: http://localhost:5000
+    timeout: 30000
+  
+  # 通义千问API配置（推荐使用）
+  qwen:
+    enabled: true  # 启用后填写以下配置
+    api-key: sk-710ea5b5319c46258a7caec769c388dc  # 阿里云通义千问API Key
+    api-url: https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation
+    model: qwen-turbo  # 可选: qwen-turbo, qwen-plus, qwen-max
+  
+  # 文心一言API配置（备选）
+  ernie:
+    enabled: false  # 启用后填写以下配置
+    api-key: YOUR_ERNIE_API_KEY_HERE  # 百度文心一言API Key
+    secret-key: YOUR_ERNIE_SECRET_KEY_HERE  # 百度文心一言Secret Key
+    api-url: https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions
+  
+  # 通用配置
+  service:
+    timeout: 30000  # API调用超时时间（毫秒）
+    max-retries: 3  # 最大重试次数
+    enable-cache: true  # 是否启用结果缓存
+
+# 推荐算法配置
+recommend:
+  # 协同过滤参数
+  cf:
+    neighbor-size: 10  # K近邻数量
+    similarity-threshold: 0.3  # 相似度阈值
+  # 混合推荐权重
+  weights:
+    collaborative: 0.5  # 协同过滤权重
+    content: 0.3        # 内容推荐权重
+    popularity: 0.2     # 热度权重
+  # 推荐列表大小
+  result-size: 20
+  # 缓存有效期(秒)
+  cache-ttl: 86400  # 24小时
+
+# 资料采集配置
+material:
+  crawler:
+    enabled: true
+    user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    timeout: 10000  # 请求超时(毫秒)
+    max-retry: 3    # 最大重试次数
+    rate-limit: 1000  # 请求间隔(毫秒)
+    sources:
+      - name: "CSDN"
+        url: "https://so.csdn.net/so/search"
+        type: "csdn"
+        enabled: true
+        description: "国内最大技术社区"
+      - name: "菜鸟教程"
+        url: "https://www.runoob.com"
+        type: "runoob"
+        enabled: true
+        description: "中文编程教程"
+      - name: "掘金"
+        url: "https://juejin.cn/search"
+        type: "juejin"
+        enabled: true
+        description: "优质中文技术社区"
+      - name: "简书"
+        url: "https://www.jianshu.com/search"
+        type: "jianshu"
+        enabled: false
+        description: "学习笔记和文章"
+
+# 日志配置
+logging:
+  level:
+    com.learning.recommend: debug
+    com.baomidou.mybatisplus: debug
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{50} - %msg%n"
+
+# Knife4j配置
+knife4j:
+  enable: true
+  openapi:
+    title: "学习推荐系统接口文档"
+    version: "1.0"
+    group:
+      default:
+        api-rule: package
+        api-rule-resources:
+          - com.learning.recommend.controller
+

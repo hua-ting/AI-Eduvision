@@ -1,0 +1,705 @@
+<template>
+  <div class="markdown-editor">
+    <div class="editor-toolbar">
+      <div class="toolbar-group">
+        <button @click="insertFormat('**bold text**')" title="粗体" class="toolbar-btn">
+          <n-icon :size="18"><text-bold /></n-icon>
+        </button>
+        <button @click="insertFormat('*italic text*')" title="斜体" class="toolbar-btn">
+          <n-icon :size="18"><text-italic /></n-icon>
+        </button>
+      </div>
+      
+      <div class="toolbar-group">
+        <button @click="insertFormat('`code`\n', 1)" title="行内代码" class="toolbar-btn">
+          <n-icon :size="18"><code-outline /></n-icon>
+        </button>
+        <button @click="insertCodeBlock" title="代码块" class="toolbar-btn">
+          <n-icon :size="18"><code-slash /></n-icon>
+        </button>
+      </div>
+      
+      <div class="toolbar-group">
+        <button @click="insertFormat('[link](url)\n', 1)" title="链接" class="toolbar-btn">
+          <n-icon :size="18"><link-outline /></n-icon>
+        </button>
+        <button @click="insertFormat('![alt text](image_url)\n', 2)" title="图片" class="toolbar-btn">
+          <n-icon :size="18"><image-outline /></n-icon>
+        </button>
+      </div>
+      
+      <div class="toolbar-group">
+        <button @click="togglePreviewMode" class="toolbar-btn">
+          <n-icon :size="18">
+            <eye-outline v-if="!previewMode" />
+            <eye-off-outline v-else />
+          </n-icon>
+          {{ previewMode ? '编辑' : '预览' }}
+        </button>
+      </div>
+      
+      <div class="toolbar-group">
+        <button @click="toggleSyncMode" class="toolbar-btn">
+          <n-icon :size="18">
+            <sync-outline v-if="realTimeSync" />
+            <sync-outline v-else :rotate="180" />
+          </n-icon>
+          {{ realTimeSync ? '实时同步' : '手动同步' }}
+        </button>
+      </div>
+    </div>
+    
+    <div class="editor-container">
+      <div v-if="!previewMode || !previewModeOnly" class="editor-area">
+        <textarea
+          ref="textareaRef"
+          v-model="localValue"
+          :placeholder="placeholder"
+          class="markdown-textarea"
+          @input="handleInput"
+          @blur="saveDraft"
+        ></textarea>
+        <div class="draft-indicator" v-if="lastSaved">
+          草稿已保存: {{ lastSaved }}
+        </div>
+      </div>
+      
+      <div v-if="!previewModeOnly" class="divider" @click="toggleSplitMode">
+        <n-icon><swap-horizontal /></n-icon>
+      </div>
+      
+      <div v-if="previewMode || splitMode" class="preview-area">
+        <div class="preview-header">
+          <div class="preview-controls">
+            <button @click="copyAllCode" class="preview-btn">
+              <n-icon :size="16"><copy-outline /></n-icon>
+              复制全部代码
+            </button>
+            <button @click="toggleToc" class="preview-btn">
+              <n-icon :size="16"><list-outline /></n-icon>
+              {{ showToc ? '隐藏目录' : '显示目录' }}
+            </button>
+            <button @click="scrollToTop" class="preview-btn">
+              <n-icon :size="16"><arrow-up /></n-icon>
+              返回顶部
+            </button>
+          </div>
+        </div>
+        
+        <div v-if="showToc && tocItems.length > 0" class="toc-panel">
+          <div class="toc-title">目录</div>
+          <div class="toc-items">
+            <div
+              v-for="item in tocItems"
+              :key="item.id"
+              :class="['toc-item', `toc-level-${item.level}`, { active: activeHeadingId === item.id }]"
+              :style="{ paddingLeft: (item.level - 1) * 16 + 'px' }"
+              @click="scrollToHeading(item.id)"
+            >
+              {{ item.text }}
+            </div>
+          </div>
+        </div>
+        
+        <div ref="previewRef" class="markdown-preview" v-html="renderedContent"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { marked } from 'marked'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github.css'
+import {
+  TextBold,
+  TextItalic,
+  CodeOutline,
+  CodeSlash,
+  LinkOutline,
+  ImageOutline,
+  EyeOutline,
+  EyeOff,
+  SwapHorizontal,
+  CopyOutline,
+  List,
+  ArrowUp
+} from '@vicons/ionicons5'
+
+const props = defineProps({
+  modelValue: {
+    type: String,
+    default: ''
+  },
+  placeholder: {
+    type: String,
+    default: '请输入Markdown内容...'
+  },
+  previewModeOnly: {
+    type: Boolean,
+    default: false
+  },
+  autoSaveKey: {
+    type: String,
+    default: null
+  },
+  maxHeight: {
+    type: String,
+    default: '500px'
+  }
+})
+
+const emit = defineEmits(['update:modelValue'])
+
+// Refs
+const textareaRef = ref(null)
+const previewRef = ref(null)
+
+// State
+const localValue = ref(props.modelValue)
+const previewMode = ref(false)
+const splitMode = ref(true)
+const realTimeSync = ref(true)
+const lastSaved = ref(null)
+const tocItems = ref([])
+const activeHeadingId = ref('')
+const showToc = ref(false)
+const observer = ref(null)
+
+// 配置marked
+marked.setOptions({
+  highlight: function(code, lang) {
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  },
+  langPrefix: 'hljs language-',
+  pedantic: false,
+  gfm: true,
+  breaks: false,
+  sanitize: false,
+  smartLists: true,
+  smartypants: false,
+  xhtml: false
+});
+
+// 计算属性
+const renderedContent = computed(() => {
+  if (!localValue.value) return ''
+  let html = marked(localValue.value)
+  
+  // 为标题添加ID以便目录导航
+  html = html.replace(/<h([1-6])>(.*?)<\/h\1>/g, (match, level, text) => {
+    const id = text.replace(/[^\w\u4e00-\u9fff]/g, '-').toLowerCase()
+    return `<h${level} id="${id}">${text}<a href="#${id}" class="header-anchor">#</a></h${level}>`
+  })
+  
+  return html
+})
+
+// 生成目录
+const generateToc = async () => {
+  await nextTick()
+  if (!previewRef.value) return
+  
+  const headings = previewRef.value.querySelectorAll('h1, h2, h3, h4, h5, h6')
+  tocItems.value = Array.from(headings).map(heading => ({
+    id: heading.id,
+    text: heading.textContent.replace('#', '').trim(),
+    level: parseInt(heading.tagName.charAt(1))
+  }))
+}
+
+// 监听内容变化
+watch(() => props.modelValue, (newValue) => {
+  if (localValue.value !== newValue) {
+    localValue.value = newValue
+  }
+})
+
+watch(localValue, (newValue) => {
+  if (props.modelValue !== newValue) {
+    emit('update:modelValue', newValue)
+  }
+  
+  if (realTimeSync.value) {
+    generateToc()
+  }
+})
+
+// 自动保存草稿
+const saveDraft = () => {
+  if (props.autoSaveKey) {
+    localStorage.setItem(`markdown-draft-${props.autoSaveKey}`, localValue.value)
+    lastSaved.value = new Date().toLocaleTimeString('zh-CN')
+  }
+}
+
+// 恢复草稿
+const restoreDraft = () => {
+  if (props.autoSaveKey) {
+    const draft = localStorage.getItem(`markdown-draft-${props.autoSaveKey}`)
+    if (draft) {
+      localValue.value = draft
+      lastSaved.value = '已恢复草稿'
+    }
+  }
+}
+
+// 插入格式
+const insertFormat = (format, cursorOffset = 0) => {
+  const textarea = textareaRef.value
+  if (!textarea) return
+  
+  const startPos = textarea.selectionStart
+  const endPos = textarea.selectionEnd
+  const selectedText = localValue.value.substring(startPos, endPos)
+  
+  let newText = format
+  if (selectedText) {
+    newText = format.replace('text', selectedText)
+  }
+  
+  const newValue = 
+    localValue.value.substring(0, startPos) + 
+    newText + 
+    localValue.value.substring(endPos)
+  
+  localValue.value = newValue
+  
+  // 设置光标位置
+  setTimeout(() => {
+    textarea.focus()
+    const newPos = startPos + newText.length - cursorOffset
+    textarea.setSelectionRange(newPos, newPos)
+  }, 0)
+}
+
+// 插入代码块
+const insertCodeBlock = () => {
+  insertFormat('\n```language\ncode here\n```\n', 10)
+}
+
+// 切换预览模式
+const togglePreviewMode = () => {
+  previewMode.value = !previewMode.value
+  if (previewMode.value) {
+    generateToc()
+  }
+}
+
+// 切换同步模式
+const toggleSyncMode = () => {
+  realTimeSync.value = !realTimeSync.value
+}
+
+// 切分屏模式
+const toggleSplitMode = () => {
+  splitMode.value = !splitMode.value
+}
+
+// 复制全部代码
+const copyAllCode = async () => {
+  if (!previewRef.value) return
+  
+  const codeBlocks = previewRef.value.querySelectorAll('pre code')
+  let allCode = ''
+  
+  codeBlocks.forEach(block => {
+    allCode += block.textContent + '\n---\n'
+  })
+  
+  allCode = allCode.slice(0, -5) // 移除最后的分隔符
+  
+  try {
+    await navigator.clipboard.writeText(allCode)
+    alert('所有代码已复制到剪贴板')
+  } catch (err) {
+    console.error('复制失败:', err)
+    // 降级方案
+    const textArea = document.createElement('textarea')
+    textArea.value = allCode
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+    alert('所有代码已复制到剪贴板')
+  }
+}
+
+// 切换目录显示
+const toggleToc = () => {
+  showToc.value = !showToc.value
+}
+
+// 滚动到顶部
+const scrollToTop = () => {
+  if (previewRef.value) {
+    previewRef.value.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+}
+
+// 滚动到标题
+const scrollToHeading = (id) => {
+  const element = document.getElementById(id)
+  if (element && previewRef.value) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+// 处理输入事件
+const handleInput = () => {
+  if (!realTimeSync.value) return
+  generateToc()
+}
+
+// 监听滚动以高亮目录项
+const handleScroll = () => {
+  if (!previewRef.value || tocItems.value.length === 0) return
+  
+  const scrollPosition = previewRef.value.scrollTop + 100 // 偏移量避免刚好在边界
+  const headings = previewRef.value.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]')
+  
+  let currentHeading = null
+  for (let i = 0; i < headings.length; i++) {
+    const heading = headings[i]
+    const rect = heading.getBoundingClientRect()
+    const previewRect = previewRef.value.getBoundingClientRect()
+    
+    if (rect.top - previewRect.top <= 0 && rect.bottom - previewRect.top > 0) {
+      currentHeading = heading.getAttribute('id')
+      break
+    }
+  }
+  
+  if (currentHeading) {
+    activeHeadingId.value = currentHeading
+  }
+}
+
+onMounted(() => {
+  restoreDraft()
+  
+  if (previewRef.value) {
+    previewRef.value.addEventListener('scroll', handleScroll)
+    observer.value = new MutationObserver(() => {
+      generateToc()
+    })
+    observer.value.observe(previewRef.value, {
+      childList: true,
+      subtree: true
+    })
+  }
+})
+
+onUnmounted(() => {
+  if (previewRef.value) {
+    previewRef.value.removeEventListener('scroll', handleScroll)
+  }
+  if (observer.value) {
+    observer.value.disconnect()
+  }
+})
+</script>
+
+<style scoped>
+.markdown-editor {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.editor-toolbar {
+  display: flex;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 8px 12px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 2px;
+  margin-right: 8px;
+  padding-right: 8px;
+  border-right: 1px solid #e0e0e0;
+}
+
+.toolbar-group:last-child {
+  border-right: none;
+  margin-right: 0;
+}
+
+.toolbar-btn {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.toolbar-btn:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+}
+
+.toolbar-btn:active {
+  background: #dee2e6;
+}
+
+.editor-container {
+  display: flex;
+  min-height: 300px;
+  height: v-bind(maxHeight);
+}
+
+.editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.markdown-textarea {
+  flex: 1;
+  width: 100%;
+  border: none;
+  resize: none;
+  padding: 16px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.draft-indicator {
+  padding: 4px 16px;
+  font-size: 12px;
+  color: #6c757d;
+  background: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+}
+
+.divider {
+  width: 20px;
+  background: #f8f9fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #6c757d;
+  border-left: 1px solid #e0e0e0;
+  border-right: 1px solid #e0e0e0;
+}
+
+.divider:hover {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.preview-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #e0e0e0;
+  background: white;
+  overflow: hidden;
+}
+
+.preview-header {
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.preview-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.preview-btn {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.preview-btn:hover {
+  background: #e9ecef;
+}
+
+.toc-panel {
+  width: 220px;
+  background: #fafafa;
+  border-right: 1px solid #e0e0e0;
+  padding: 12px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.toc-title {
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #333;
+  font-size: 14px;
+}
+
+.toc-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toc-item {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #555;
+  transition: all 0.2s;
+}
+
+.toc-item:hover {
+  background: #e9ecef;
+}
+
+.toc-item.active {
+  background: #0ea5e9;
+  color: white;
+}
+
+.toc-level-1 { padding-left: 0; font-weight: bold; }
+.toc-level-2 { padding-left: 16px; }
+.toc-level-3 { padding-left: 32px; }
+.toc-level-4 { padding-left: 48px; }
+.toc-level-5 { padding-left: 64px; }
+.toc-level-6 { padding-left: 80px; }
+
+.markdown-preview {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+
+.markdown-preview :deep(h1) {
+  font-size: 2em;
+  margin: 0.67em 0;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 0.3em;
+}
+
+.markdown-preview :deep(h2) {
+  font-size: 1.5em;
+  margin: 0.83em 0;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.3em;
+}
+
+.markdown-preview :deep(h3) {
+  font-size: 1.17em;
+  margin: 1em 0;
+}
+
+.markdown-preview :deep(h4) {
+  font-size: 1em;
+  margin: 1.33em 0;
+}
+
+.markdown-preview :deep(h5) {
+  font-size: 0.83em;
+  margin: 1.67em 0;
+}
+
+.markdown-preview :deep(h6) {
+  font-size: 0.67em;
+  margin: 2.33em 0;
+}
+
+.markdown-preview :deep(p) {
+  margin: 1em 0;
+}
+
+.markdown-preview :deep(pre) {
+  background: #f6f8fa;
+  border-radius: 6px;
+  padding: 16px;
+  overflow: auto;
+  font-size: 85%;
+  line-height: 1.45;
+  border: 1px solid #ddd;
+}
+
+.markdown-preview :deep(code) {
+  background: #f6f8fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 85%;
+}
+
+.markdown-preview :deep(blockquote) {
+  margin: 0;
+  padding: 0 1em;
+  color: #6a737d;
+  border-left: 0.25em solid #dfe2e5;
+}
+
+.markdown-preview :deep(ul), .markdown-preview :deep(ol) {
+  padding-left: 2em;
+}
+
+.markdown-preview :deep(li) {
+  margin: 0.25em 0;
+}
+
+.markdown-preview :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+.markdown-preview :deep(th), .markdown-preview :deep(td) {
+  border: 1px solid #dfe2e5;
+  padding: 6px 13px;
+}
+
+.markdown-preview :deep(th) {
+  background-color: #f6f8fa;
+  font-weight: 600;
+}
+
+.markdown-preview :deep(img) {
+  max-width: 100%;
+  box-sizing: content-box;
+}
+
+.header-anchor {
+  margin-left: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.markdown-preview :deep(h1):hover .header-anchor,
+.markdown-preview :deep(h2):hover .header-anchor,
+.markdown-preview :deep(h3):hover .header-anchor,
+.markdown-preview :deep(h4):hover .header-anchor,
+.markdown-preview :deep(h5):hover .header-anchor,
+.markdown-preview :deep(h6):hover .header-anchor {
+  opacity: 1;
+}
+</style>
