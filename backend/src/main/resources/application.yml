@@ -10,9 +10,9 @@ spring:
   # 数据源配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/learning_recommend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: ${DB_URL:jdbc:mysql://localhost:3306/learning_recommend?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -22,9 +22,9 @@ spring:
   
   # Redis配置
   redis:
-    host: localhost
-    port: 6379
-    password: 
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
     database: 0
     timeout: 5000
     lettuce:
@@ -66,7 +66,7 @@ mybatis-plus:
 
 # JWT配置
 jwt:
-  secret: learning-recommend-system-secret-key-2024
+  secret: ${JWT_SECRET:learning-recommend-system-secret-key-2024}
   expiration: 604800000  # 7天(毫秒)
   header: Authorization
   prefix: Bearer 
@@ -82,16 +82,16 @@ ai:
   # 通义千问API配置（推荐使用）
   qwen:
     enabled: true  # 启用后填写以下配置
-    api-key: sk-710ea5b5319c46258a7caec769c388dc  # 阿里云通义千问API Key
-    api-url: https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation
-    model: qwen-turbo  # 可选: qwen-turbo, qwen-plus, qwen-max
+    api-key: ${QWEN_API_KEY:your-qwen-api-key-here}  # 阿里云通义千问API Key
+    api-url: ${QWEN_API_URL:https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation}
+    model: ${QWEN_MODEL:qwen-turbo}  # 可选: qwen-turbo, qwen-plus, qwen-max
   
   # 文心一言API配置（备选）
   ernie:
     enabled: false  # 启用后填写以下配置
-    api-key: YOUR_ERNIE_API_KEY_HERE  # 百度文心一言API Key
-    secret-key: YOUR_ERNIE_SECRET_KEY_HERE  # 百度文心一言Secret Key
-    api-url: https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions
+    api-key: ${ERNIE_API_KEY:your-ernie-api-key-here}  # 百度文心一言API Key
+    secret-key: ${ERNIE_SECRET_KEY:your-ernie-secret-key-here}  # 百度文心一言Secret Key
+    api-url: ${ERNIE_API_URL:https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions}
   
   # 通用配置
   service:

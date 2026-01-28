@@ -26,6 +26,10 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# 生产环境配置文件
+application-prod.yml
+**/application-prod.yml
+
 # 日志文件
 logs/
 *.log
