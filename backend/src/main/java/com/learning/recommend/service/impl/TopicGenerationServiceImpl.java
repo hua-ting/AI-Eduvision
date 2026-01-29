@@ -125,7 +125,12 @@ public class TopicGenerationServiceImpl implements TopicGenerationService {
             
             if (startIndex >= 0 && endIndex > startIndex) {
                 String jsonArray = aiResponse.substring(startIndex, endIndex);
-                return objectMapper.readValue(jsonArray, new TypeReference<List<TopicVO>>() {});
+                try {
+                    return objectMapper.readValue(jsonArray, new TypeReference<List<TopicVO>>() {});
+                } catch (Exception e) {
+                    log.warn("解析JSON数组失败，返回空列表", e);
+                    return new ArrayList<>();
+                }
             }
         } catch (Exception e) {
             log.warn("解析AI返回的主题JSON失败", e);

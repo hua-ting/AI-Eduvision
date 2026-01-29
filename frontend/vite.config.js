@@ -7,7 +7,16 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   build: {
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 800,
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true
+      }
+    },
+    cssCodeSplit: true,
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -18,9 +27,28 @@ export default defineConfig({
             if (id.includes('vue')) {
               return 'chunk-vue'
             }
+            if (id.includes('echarts')) {
+              return 'chunk-echarts'
+            }
+            if (id.includes('axios')) {
+              return 'chunk-axios'
+            }
             return 'vendor'
           }
-        }
+          // 按功能模块分块
+          if (id.includes('views/student')) {
+            return 'chunk-student'
+          }
+          if (id.includes('views/admin')) {
+            return 'chunk-admin'
+          }
+          if (id.includes('components')) {
+            return 'chunk-components'
+          }
+        },
+        chunkFileNames: 'js/[name]-[hash].js',
+        entryFileNames: 'js/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
       }
     }
   },

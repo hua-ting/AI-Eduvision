@@ -6,27 +6,11 @@ import { createPinia } from 'pinia'
 // 创建Pinia实例（必须步骤，激活Pinia）
 const pinia = createPinia()
 
-// ========== 2. 编辑器配置（重新配置，确保顺序正确）==========
-// 1. 先导入基础样式
-import '@kangc/v-md-editor/lib/style/base-editor.css'
-import '@kangc/v-md-editor/lib/style/preview.css'
-
-// 2. 导入hljs主题
-import hljs from '@kangc/v-md-editor/lib/theme/hljs'
-
-// 3. 导入编辑器和预览组件
-import VMdEditor from '@kangc/v-md-editor'
-import VMdPreview from '@kangc/v-md-editor/lib/preview'
-
-// 4. 配置主题
-VMdEditor.use(hljs)
-VMdPreview.use(hljs)
-
-// ========== 3. Naive UI原有配置（保留不变）==========
+// ========== 2. Naive UI原有配置（保留不变）==========
 import { createDiscreteApi } from 'naive-ui'
 const { message, notification, dialog, loadingBar } = createDiscreteApi(['message', 'notification', 'dialog', 'loadingBar'])
 
-// ========== 4. 创建Vue应用并按顺序挂载依赖（关键：pinia必须在router前/后挂载，确保最先激活）==========
+// ========== 3. 创建Vue应用并按顺序挂载依赖（关键：pinia必须在router前/后挂载，确保最先激活）==========
 const app = createApp(App)
 // 先挂载Pinia（核心！确保组件使用useStore前Pinia已激活）
 app.use(pinia)
@@ -39,9 +23,15 @@ app.provide('notification', notification)
 app.provide('dialog', dialog)
 app.provide('loadingBar', loadingBar)
 
-// 全局注册编辑器/预览组件
-app.component('VMdEditor', VMdEditor)
-app.component('VMdPreview', VMdPreview)
+// 挂载到window对象，供工具函数使用
+window.$message = message
+window.$notification = notification
+window.$dialog = dialog
+window.$loadingBar = loadingBar
+
+// 初始化错误处理器
+import { initErrorHandlers } from '@/utils/errorUtils'
+initErrorHandlers()
 
 // 挂载应用
 app.mount('#app')

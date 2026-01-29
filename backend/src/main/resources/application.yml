@@ -6,6 +6,9 @@ server:
 spring:
   application:
     name: learning-recommend-system
+  # 激活生产环境配置
+  profiles:
+    active: prod
   
   # 数据源配置
   datasource:
@@ -24,7 +27,6 @@ spring:
   redis:
     host: ${REDIS_HOST:localhost}
     port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:}
     database: 0
     timeout: 5000
     lettuce:
@@ -78,21 +80,21 @@ ai:
     enabled: true
     service-url: http://localhost:5000
     timeout: 30000
-  
+
   # 通义千问API配置（推荐使用）
   qwen:
     enabled: true  # 启用后填写以下配置
-    api-key: ${QWEN_API_KEY:your-qwen-api-key-here}  # 阿里云通义千问API Key
+    api-key: sk-710ea5b5319c46258a7caec769c388dc  # 阿里云通义千问API Key
     api-url: ${QWEN_API_URL:https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation}
     model: ${QWEN_MODEL:qwen-turbo}  # 可选: qwen-turbo, qwen-plus, qwen-max
-  
+
   # 文心一言API配置（备选）
   ernie:
     enabled: false  # 启用后填写以下配置
     api-key: ${ERNIE_API_KEY:your-ernie-api-key-here}  # 百度文心一言API Key
     secret-key: ${ERNIE_SECRET_KEY:your-ernie-secret-key-here}  # 百度文心一言Secret Key
     api-url: ${ERNIE_API_URL:https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions}
-  
+
   # 通用配置
   service:
     timeout: 30000  # API调用超时时间（毫秒）

@@ -2,6 +2,7 @@ package com.learning.recommend.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.learning.recommend.service.AIService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,9 +45,16 @@ public class AIServiceImpl implements AIService {
         }
         String q = question.trim();
 
-        if (!enabled || apiKey == null || apiKey.isEmpty()) {
-            // 临时实现：简单规则回答
-            return String.format("根据您的问题'%s'，这是一个关于学习的知识点。建议您深入研究相关资料，理解核心概念和应用场景。", q);
+        if (!enabled) {
+            return "AI服务未启用，请在配置文件中启用AI服务";
+        }
+
+        if (apiKey == null || apiKey.isEmpty()) {
+            return "AI服务API密钥未配置，请在配置文件中设置api-key";
+        }
+
+        if (apiKey.equals("your-qwen-api-key-here")) {
+            return "AI服务使用的是默认API密钥，请配置真实的API密钥以使用AI功能";
         }
 
         try {
@@ -69,7 +77,7 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public Map<String, Object> generateKnowledgePoint(String question, String answer) {
-        if (!enabled || apiKey == null || apiKey.isEmpty()) {
+        if (!enabled || apiKey == null || apiKey.isEmpty() || apiKey.equals("your-qwen-api-key-here")) {
             // 临时实现：简单生成
             return createSimpleKnowledgePoint(question, answer);
         }
@@ -109,7 +117,7 @@ public class AIServiceImpl implements AIService {
     public Map<String, Object> batchGenerateKnowledgePoints(String category, int count) {
         List<Map<String, Object>> knowledgePoints = new ArrayList<>();
         
-        if (!enabled || apiKey == null || apiKey.isEmpty()) {
+        if (!enabled || apiKey == null || apiKey.isEmpty() || apiKey.equals("your-qwen-api-key-here")) {
             // 临时实现：返回示例数据
             for (int i = 0; i < Math.min(count, 5); i++) {
                 knowledgePoints.add(createSampleKnowledgePoint(category, i + 1));
@@ -147,6 +155,7 @@ public class AIServiceImpl implements AIService {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", "Bearer " + apiKey);
 
+        // 使用DashScope标准格式
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", model);
         
@@ -157,7 +166,9 @@ public class AIServiceImpl implements AIService {
         requestBody.put("input", input);
         
         Map<String, Object> parameters = new HashMap<>();
-        parameters.put("result_format", "message");
+        parameters.put("temperature", 0.7);
+        parameters.put("top_p", 0.95);
+        parameters.put("max_tokens", 1000);
         requestBody.put("parameters", parameters);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
@@ -166,16 +177,60 @@ public class AIServiceImpl implements AIService {
         
         if (response.getStatusCode() == HttpStatus.OK) {
             try {
-                JsonNode root = objectMapper.readTree(response.getBody());
-                return root.path("output").path("choices").get(0)
-                          .path("message").path("content").asText();
+                String responseBody = response.getBody();
+                log.info("API响应内容: {}", responseBody);
+                
+                JsonNode root = objectMapper.readTree(responseBody);
+                
+                // 尝试多种响应格式
+                // 格式1: DashScope标准格式 - output.text
+                JsonNode outputNode = root.path("output");
+                if (outputNode.isObject()) {
+                    JsonNode textNode = outputNode.path("text");
+                    if (!textNode.isMissingNode()) {
+                        return textNode.asText();
+                    }
+                    
+                    // 格式1b: DashScope格式 - output.choices
+                    JsonNode choicesNode = outputNode.path("choices");
+                    if (choicesNode.isArray() && choicesNode.size() > 0) {
+                        JsonNode firstChoice = choicesNode.get(0);
+                        JsonNode messageNode = firstChoice.path("message");
+                        JsonNode contentNode = messageNode.path("content");
+                        if (!contentNode.isMissingNode()) {
+                            return contentNode.asText();
+                        }
+                    }
+                }
+                
+                // 格式2: OpenAI兼容格式
+                JsonNode choicesNode2 = root.path("choices");
+                if (choicesNode2.isArray() && choicesNode2.size() > 0) {
+                    JsonNode firstChoice2 = choicesNode2.get(0);
+                    JsonNode messageNode2 = firstChoice2.path("message");
+                    JsonNode contentNode2 = messageNode2.path("content");
+                    if (!contentNode2.isMissingNode()) {
+                        return contentNode2.asText();
+                    }
+                }
+                
+                // 格式3: 直接返回内容
+                JsonNode contentNode3 = root.path("content");
+                if (!contentNode3.isMissingNode()) {
+                    return contentNode3.asText();
+                }
+                
+                throw new RuntimeException("无法解析API响应格式，请检查响应内容: " + responseBody);
             } catch (Exception e) {
                 log.error("解析API响应失败", e);
-                throw new RuntimeException("AI响应解析失败");
+                log.error("响应内容: {}", response.getBody());
+                throw new RuntimeException("AI响应解析失败: " + e.getMessage());
             }
+        } else {
+            log.error("API调用失败，状态码: {}", response.getStatusCode());
+            log.error("响应内容: {}", response.getBody());
+            throw new RuntimeException("AI调用失败，状态码: " + response.getStatusCode());
         }
-        
-        throw new RuntimeException("AI调用失败");
     }
 
     /**
