@@ -6,11 +6,21 @@ import { createPinia } from 'pinia'
 // 创建Pinia实例（必须步骤，激活Pinia）
 const pinia = createPinia()
 
-// ========== 2. 编辑器配置（适配1.7.12，极简无错，保留不变）==========
-import VMdEditor from '@kangc/v-md-editor'
-import VMdPreview from '@kangc/v-md-editor/lib/preview'
+// ========== 2. 编辑器配置（重新配置，确保顺序正确）==========
+// 1. 先导入基础样式
 import '@kangc/v-md-editor/lib/style/base-editor.css'
 import '@kangc/v-md-editor/lib/style/preview.css'
+
+// 2. 导入hljs主题
+import hljs from '@kangc/v-md-editor/lib/theme/hljs'
+
+// 3. 导入编辑器和预览组件
+import VMdEditor from '@kangc/v-md-editor'
+import VMdPreview from '@kangc/v-md-editor/lib/preview'
+
+// 4. 配置主题
+VMdEditor.use(hljs)
+VMdPreview.use(hljs)
 
 // ========== 3. Naive UI原有配置（保留不变）==========
 import { createDiscreteApi } from 'naive-ui'

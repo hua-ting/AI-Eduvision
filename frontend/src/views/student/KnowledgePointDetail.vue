@@ -187,7 +187,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useUserStore } from '@/store/user'
@@ -313,24 +313,37 @@ const mapUserRole = (roleNum) => {
   return num === 1 ? 'admin' : 'normal'
 }
 
-// 打开编辑框（初始化编辑器内容和用户信息，核心修复：角色映射）
-const openEditModal = () => {
-  // 从store获取用户信息
-  const userStore = useUserStore()
-  if (userStore.userInfo) {
-    currentUserRole.value = mapUserRole(userStore.userInfo.role) // 映射为字符串admin/normal
-    currentUserId.value = userStore.userInfo.id
-  } else {
-    // 降级从localStorage获取
-    const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
-    if (userInfo.role !== undefined) {
-      currentUserRole.value = mapUserRole(userInfo.role) // 映射为字符串admin/normal
-      currentUserId.value = userInfo.id
+// 打开编辑框（初始化编辑器内容和用户信息，核心修复：异步初始化和错误处理）
+const openEditModal = async () => {
+  try {
+    // 从store获取用户信息
+    const userStore = useUserStore()
+    if (userStore.userInfo) {
+      currentUserRole.value = mapUserRole(userStore.userInfo.role) // 映射为字符串admin/normal
+      currentUserId.value = userStore.userInfo.id
+    } else {
+      // 降级从localStorage获取
+      const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+      if (userInfo.role !== undefined) {
+        currentUserRole.value = mapUserRole(userInfo.role) // 映射为字符串admin/normal
+        currentUserId.value = userInfo.id
+      }
     }
+    
+    // 确保知识点内容存在
+    if (knowledgePoint.value && knowledgePoint.value.content) {
+      editingContent.value = knowledgePoint.value.content
+    } else {
+      editingContent.value = ''
+    }
+    
+    // 使用nextTick确保DOM更新后再显示编辑器
+    await nextTick()
+    isEditing.value = true
+  } catch (error) {
+    console.error('打开编辑框失败:', error)
+    message.error('打开编辑框失败，请重试')
   }
-  // 初始化编辑内容为当前知识点内容
-  editingContent.value = knowledgePoint.value.content
-  isEditing.value = true
 }
 
 // 关闭编辑框（重置状态）

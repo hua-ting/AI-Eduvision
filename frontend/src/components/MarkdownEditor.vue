@@ -30,10 +30,6 @@
       </div>
       <div class="header-right">
         <span class="draft-tip" v-if="lastSaved">草稿已保存：{{ lastSaved }}</span>
-        <!-- 目录显隐 -->
-        <n-button size="small" text @click="toggleToc" class="toc-btn">
-          {{ showToc ? '隐藏目录' : '显示目录' }}
-        </n-button>
       </div>
     </div>
 
@@ -54,18 +50,22 @@
         </div>
       </div>
 
-      <!-- 核心：全局注册的VMdEditor，直接使用 -->
-      <div class="wysiwyg-edit-area">
-        <VMdEditor
-            ref="editorRef"
-            v-model="localValue"
-            :placeholder="placeholder || '请输入内容（支持Markdown语法，所见即所得）'"
-            @input="handleInput"
-            @blur="saveDraft"
-            class="feishu-editor-core"
-            mode="wysiwyg"
-        />
-      </div>
+      <!-- 替代方案：使用textarea作为简单的Markdown编辑器 -->
+        <div class="wysiwyg-edit-area">
+          <textarea
+              v-model="localValue"
+              :placeholder="placeholder || '请输入内容（支持Markdown语法）'"
+              @input="handleInput"
+              @blur="saveDraft"
+              class="simple-markdown-editor"
+              rows="20"
+          ></textarea>
+          <div class="editor-tip">
+            <n-text depth="3" size="small">
+              💡 支持Markdown语法，例如：# 标题、**粗体**、```代码块```等
+            </n-text>
+          </div>
+        </div>
     </div>
   </div>
 </template>
@@ -93,22 +93,22 @@ const props = defineProps({
 // Emits：保留所有自定义事件
 const emit = defineEmits(['close', 'refreshContent', 'update:modelValue'])
 
-// 编辑器实例Ref
-const editorRef = ref(null)
 // 编辑内容双向绑定核心
 const localValue = ref(props.modelValue || '')
 
 // 监听localValue变化，同步到父组件（v-model核心）
 watch(localValue, (newValue) => {
-  emit('update:modelValue', newValue)
-}, { deep: true })
+  if (newValue !== undefined && newValue !== null) {
+    emit('update:modelValue', newValue)
+  }
+}, { deep: false }) // 字符串不需要deep监听
 
 // 监听父组件modelValue变化，同步到编辑框
 watch(() => props.modelValue, (newValue) => {
-  if (newValue !== localValue.value && newValue) {
+  if (newValue !== undefined && newValue !== null && newValue !== localValue.value) {
     localValue.value = newValue
   }
-}, { immediate: true, deep: true })
+}, { immediate: true, deep: false }) // 字符串不需要deep监听
 
 // 草稿相关状态
 const lastSaved = ref(null)
@@ -118,12 +118,24 @@ const tocItems = ref([])
 const activeId = ref('')
 const observer = ref(null)
 
-// 草稿保存：自动保存到localStorage
+// 防抖计时器
+let saveTimeout = null
+
+// 草稿保存：自动保存到localStorage（添加防抖）
 const saveDraft = () => {
   if (!props.autoSaveKey || !localValue.value.trim()) return
-  localStorage.setItem(props.autoSaveKey, localValue.value)
-  lastSaved.value = new Date().toLocaleTimeString('zh-CN')
-  message.success('草稿已自动保存')
+  
+  // 清除之前的计时器
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+  }
+  
+  // 3秒防抖，用户停止输入后再保存
+  saveTimeout = setTimeout(() => {
+    localStorage.setItem(props.autoSaveKey, localValue.value)
+    lastSaved.value = new Date().toLocaleTimeString('zh-CN')
+    // 只更新时间显示，不弹出提示
+  }, 3000)
 }
 
 // 草稿恢复：组件挂载时加载
@@ -137,47 +149,15 @@ const restoreDraft = () => {
   }
 }
 
-// 生成目录：提取H1-H3，适配编辑器DOM
-const generateToc = async () => {
-  await nextTick()
-  if (!editorRef.value || !editorRef.value.$el) return
-  const contentDom = editorRef.value.$el.querySelector('.v-md-editor__content')
-  if (!contentDom) return
-
-  const headings = contentDom.querySelectorAll('h1, h2, h3')
-  if (headings.length === 0) {
-    tocItems.value = []
-    return
-  }
-
-  tocItems.value = Array.from(headings).map(heading => {
-    const id = `toc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    heading.id = id
-    return { id, text: heading.textContent.trim(), level: parseInt(heading.tagName.charAt(1)) }
-  })
-  initScrollObserver(contentDom)
-}
-
-// 滚动监听：目录高亮当前位置
-const initScrollObserver = (contentDom) => {
-  if (observer.value) observer.value.disconnect()
-  observer.value = new IntersectionObserver(
-      entries => entries.forEach(entry => entry.isIntersecting && (activeId.value = entry.target.id)),
-      { root: contentDom, rootMargin: '-100px 0px -80% 0px' }
-  )
-  contentDom.querySelectorAll('h1, h2, h3').forEach(heading => observer.value.observe(heading))
-}
-
-// 滚动到指定目录项
+// 滚动到指定目录项（保留函数结构，实际不使用）
 const scrollToItem = (id) => {
   const el = document.getElementById(id)
   el && el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   activeId.value = id
 }
 
-// 输入事件：实时生成目录+保存草稿
+// 输入事件：保存草稿（移除目录生成，因为使用textarea）
 const handleInput = () => {
-  generateToc()
   saveDraft()
 }
 
@@ -234,29 +214,43 @@ const handleCancel = () => {
   emit('close')
 }
 
-// 目录显隐切换
+// 目录显隐切换（简化版，因为使用textarea）
 const toggleToc = () => {
   showToc.value = !showToc.value
-  showToc.value && generateToc()
+  // 由于使用textarea，不再生成目录
+  if (showToc.value) {
+    message.info('目录功能在简单编辑器模式下不可用')
+    showToc.value = false
+  }
 }
 
-// 组件挂载：恢复草稿+生成目录+自动聚焦
+// 组件挂载：恢复草稿
 onMounted(() => {
-  restoreDraft()
-  nextTick(() => {
-    generateToc()
-    // 编辑器自动聚焦
-    if (editorRef.value && editorRef.value.$el) {
-      const contentDom = editorRef.value.$el.querySelector('.v-md-editor__content')
-      contentDom && contentDom.focus()
-    }
-  })
+  try {
+    restoreDraft()
+    
+    // 自动聚焦到textarea
+    nextTick(() => {
+      const textarea = document.querySelector('.simple-markdown-editor')
+      textarea && textarea.focus()
+    })
+    
+  } catch (error) {
+    console.warn('组件挂载警告:', error)
+  }
 })
 
 // 组件卸载：销毁监听+最后保存草稿
 onUnmounted(() => {
-  if (observer.value) observer.value.disconnect()
-  saveDraft()
+  // 清除防抖计时器
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+  }
+  // 最后保存一次草稿
+  if (props.autoSaveKey && localValue.value.trim()) {
+    localStorage.setItem(props.autoSaveKey, localValue.value)
+    lastSaved.value = new Date().toLocaleTimeString('zh-CN')
+  }
 })
 </script>
 
@@ -417,6 +411,41 @@ onUnmounted(() => {
 :deep(.v-md-editor-fullscreen) {
   z-index: 2000 !important;
 }
+/* 简单Markdown编辑器样式 */
+.simple-markdown-editor {
+  width: 100%;
+  min-height: 500px;
+  padding: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #333;
+  background: #fff;
+  resize: vertical;
+  transition: all 0.3s;
+  
+  &:focus {
+    outline: none;
+    border-color: #165dff;
+    box-shadow: 0 0 0 2px rgba(22, 93, 255, 0.1);
+  }
+  
+  &::placeholder {
+    color: #999;
+  }
+}
+
+/* 编辑器提示信息 */
+.editor-tip {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 4px;
+  border-left: 3px solid #165dff;
+}
+
 /* 移动端响应式适配 */
 @media (max-width: 768px) {
   .editor-main .toc-panel {
@@ -430,6 +459,9 @@ onUnmounted(() => {
   }
   .wysiwyg-edit-area {
     padding: 8px 16px !important;
+  }
+  .editor-loading {
+    height: 300px;
   }
 }
 </style>
